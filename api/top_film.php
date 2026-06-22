@@ -1,0 +1,22 @@
+<?php
+
+include(__DIR__ . "/../config/db.php");
+
+$sql = "
+SELECT
+    COALESCE(f.title, 'Film Key ' || fp.film_key::text) AS title,
+    SUM(fp.rental_revenue) AS revenue
+FROM public.fact_film_performance fp
+JOIN public.dim_film f ON fp.film_key = f.film_key
+GROUP BY f.title, fp.film_key
+ORDER BY revenue DESC
+LIMIT 10
+";
+
+$data = $conn->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+
+header("Content-Type:application/json");
+
+echo json_encode($data);
+
+?>
