@@ -377,8 +377,9 @@ if (tableExists($conn, 'stg_rental')) {
                     ?>
                     <div class="console-line <?= $class ?>"><?= htmlspecialchars($line) ?></div>
                 <?php endforeach; ?>
-            </div>
         </div>
+    <?php endif; ?>
+
     <?php if (!empty($samplePayment)): ?>
         <div class="card-refresh">
             <h5 class="fw-bold mb-3"><i class="fa-solid fa-receipt me-2"></i>Sampel Data stg_payment (5 Baris Teratas):</h5>
