@@ -1095,6 +1095,9 @@ $pageTitles = [
             <a class="nav-link-commerce <?= $page === 'rental' ? 'active' : ''; ?>" href="index.php?page=rental"><i class="fa-solid fa-database"></i> Rental BI</a>
         </nav>
         <div class="mt-auto p-3">
+            <a class="nav-link-commerce mb-2 rounded" href="refresh_db.php" style="border-left: none; background: rgba(16,185,129, 0.1); color: #a7f3d0; padding: 10px 15px; font-size: 0.84rem;">
+                <i class="fa-solid fa-arrows-rotate"></i> Refresh Data SQL
+            </a>
             <div class="p-3 rounded" style="background:rgba(16,185,129,.1);color:#a7f3d0;font-size:.84rem;">
                 <i class="fa-solid fa-server me-1"></i> Database: Pagila staging tables
             </div>
