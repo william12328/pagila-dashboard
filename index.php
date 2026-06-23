@@ -52,6 +52,23 @@ function tableExists(PDO $conn, $table) {
     return $exists === true || $exists === 1 || $exists === '1' || $exists === 't';
 }
 
+function paymentSourceTable(PDO $conn) {
+    if (!tableExists($conn, 'staging_payment')) {
+        return 'stg_payment';
+    }
+
+    $stgTotal = (float) scalarValue($conn, "SELECT COALESCE(SUM(amount), 0) FROM public.stg_payment", [], 0);
+    $stgMax = (float) scalarValue($conn, "SELECT COALESCE(MAX(amount), 0) FROM public.stg_payment", [], 0);
+    $stagingTotal = (float) scalarValue($conn, "SELECT COALESCE(SUM(amount), 0) FROM public.staging_payment", [], 0);
+    $stagingMax = (float) scalarValue($conn, "SELECT COALESCE(MAX(amount), 0) FROM public.staging_payment", [], 0);
+
+    if ($stgTotal > 1000000 && $stgMax > 1000 && $stagingTotal > 0 && $stagingTotal < $stgTotal && $stagingMax <= 100) {
+        return 'staging_payment';
+    }
+
+    return 'stg_payment';
+}
+
 function percent($value, $decimals = 1) {
     return number_format((float)$value, $decimals, ',', '.') . '%';
 }
@@ -73,6 +90,9 @@ $stagingReady = tableExists($conn, 'staging_customer')
     && tableExists($conn, 'stg_rental')
     && tableExists($conn, 'stg_payment')
     && tableExists($conn, 'stg_inventory');
+$paymentSourceTable = paymentSourceTable($conn);
+$paymentSourceSql = 'public.' . $paymentSourceTable;
+$paymentSourceLabel = $paymentSourceTable;
 
 $stagingCustomerTable = tableExists($conn, 'staging_customers') ? 'staging_customers' : (tableExists($conn, 'staging_customer') ? 'staging_customer' : '');
 $customerSourceLabel = $stagingCustomerTable !== '' ? $stagingCustomerTable : 'staging_customer';
@@ -220,7 +240,7 @@ $rentalPaymentWhere = $rentalPaymentFilters ? ' WHERE ' . implode(' AND ', $rent
 
 $gmv = scalarValue($conn, "
     SELECT COALESCE(SUM(p.amount), 0)
-    FROM public.stg_payment p
+    FROM " . $paymentSourceSql . " p
     LEFT JOIN public.stg_rental r ON r.rental_id = p.rental_id
     LEFT JOIN public.stg_inventory i ON i.inventory_id = r.inventory_id
     LEFT JOIN public.staging_film sf ON sf.film_id = i.film_id
@@ -238,7 +258,7 @@ $totalOrders = scalarValue($conn, "
 );
 $activeCustomers = scalarValue($conn, "
     SELECT COUNT(DISTINCT p.customer_id)
-    FROM public.stg_payment p
+    FROM " . $paymentSourceSql . " p
     LEFT JOIN public.stg_rental r ON r.rental_id = p.rental_id
     LEFT JOIN public.stg_inventory i ON i.inventory_id = r.inventory_id
     LEFT JOIN public.staging_film sf ON sf.film_id = i.film_id
@@ -263,7 +283,7 @@ $lowStockRate = $activeProducts > 0 ? ($lowStock / $activeProducts) * 100 : 0;
 
 $pagilaRevenue = scalarValue($conn, "
     SELECT COALESCE(SUM(p.amount), 0)
-    FROM public.stg_payment p
+    FROM " . $paymentSourceSql . " p
     LEFT JOIN public.stg_rental r ON r.rental_id = p.rental_id
     LEFT JOIN public.stg_inventory i ON i.inventory_id = r.inventory_id
     LEFT JOIN public.staging_film sf ON sf.film_id = i.film_id
@@ -283,7 +303,7 @@ $filmBiRows = tableExists($conn, 'staging_film') ? fetchRows($conn, "
                COUNT(DISTINCT r.customer_id) AS unique_customers
         FROM public.stg_inventory i
         LEFT JOIN public.stg_rental r ON r.inventory_id = i.inventory_id
-        LEFT JOIN public.stg_payment p ON p.rental_id = r.rental_id
+        LEFT JOIN " . $paymentSourceSql . " p ON p.rental_id = r.rental_id
         GROUP BY i.film_id
     )
     SELECT sf.title,
@@ -309,7 +329,7 @@ $storeBiRows = tableExists($conn, 'staging_store') ? fetchRows($conn, "
                COUNT(DISTINCT i.film_id) AS total_films_rented
         FROM public.stg_inventory i
         LEFT JOIN public.stg_rental r ON r.inventory_id = i.inventory_id
-        LEFT JOIN public.stg_payment p ON p.rental_id = r.rental_id
+        LEFT JOIN " . $paymentSourceSql . " p ON p.rental_id = r.rental_id
         GROUP BY i.store_id
     )
     SELECT ss.store_id AS store_key,
@@ -335,7 +355,7 @@ $salesTrend = fetchRows($conn, "
     SELECT TO_CHAR(p.payment_date, 'YYYY-MM') AS period_label,
            COALESCE(SUM(p.amount), 0) AS revenue,
            COUNT(DISTINCT p.rental_id) AS orders
-    FROM public.stg_payment p
+    FROM " . $paymentSourceSql . " p
     LEFT JOIN public.stg_rental r ON r.rental_id = p.rental_id
     LEFT JOIN public.stg_inventory i ON i.inventory_id = r.inventory_id
     LEFT JOIN public.staging_film sf ON sf.film_id = i.film_id
@@ -351,7 +371,7 @@ $categoryRows = fetchRows($conn, "
     FROM public.staging_film sf
     LEFT JOIN public.stg_inventory i ON i.film_id = sf.film_id
     LEFT JOIN public.stg_rental r ON r.inventory_id = i.inventory_id
-    LEFT JOIN public.stg_payment p ON p.rental_id = r.rental_id
+    LEFT JOIN " . $paymentSourceSql . " p ON p.rental_id = r.rental_id
     " . $filmWhere . "
     GROUP BY COALESCE(sf.category, 'Uncategorized')
     ORDER BY revenue DESC
@@ -365,7 +385,7 @@ $productRows = fetchRows($conn, "
                COALESCE(SUM(p.amount), 0) AS revenue
         FROM public.stg_inventory i
         LEFT JOIN public.stg_rental r ON r.inventory_id = i.inventory_id
-        LEFT JOIN public.stg_payment p ON p.rental_id = r.rental_id
+        LEFT JOIN " . $paymentSourceSql . " p ON p.rental_id = r.rental_id
         GROUP BY i.film_id
     )
     SELECT sf.film_id AS product_id,
@@ -404,7 +424,7 @@ $orderRows = fetchRows($conn, "
     LEFT JOIN public.staging_film sf ON sf.film_id = i.film_id
     LEFT JOIN (
         SELECT rental_id, COALESCE(SUM(amount), 0) AS total_amount
-        FROM public.stg_payment
+        FROM " . $paymentSourceSql . "
         GROUP BY rental_id
     ) p ON p.rental_id = r.rental_id
     " . $rentalWhere . "
@@ -436,7 +456,7 @@ $customerRows = $customerSourceAvailable ? fetchRows($conn, "
                COUNT(DISTINCT rental_id) AS orders_count,
                COALESCE(SUM(amount), 0) AS lifetime_value,
                MAX(payment_date)::date AS last_order
-        FROM public.stg_payment
+        FROM " . $paymentSourceSql . "
         GROUP BY customer_id
     ) s ON s.customer_id = c.customer_id
     " . $customerWhere . "
@@ -480,20 +500,20 @@ $oltpSampleRows = fetchRows($conn, "
     LEFT JOIN public.stg_inventory i ON i.inventory_id = r.inventory_id
     LEFT JOIN (
         SELECT rental_id, COALESCE(SUM(amount), 0) AS total_amount
-        FROM public.stg_payment
+        FROM " . $paymentSourceSql . "
         GROUP BY rental_id
     ) p ON p.rental_id = r.rental_id
     ORDER BY order_date DESC NULLS LAST, r.rental_id DESC
     LIMIT 5
 ");
 
-$olapSampleRows = tableExists($conn, 'stg_payment') ? fetchRows($conn, "
+$olapSampleRows = tableExists($conn, $paymentSourceTable) ? fetchRows($conn, "
     SELECT TO_CHAR(p.payment_date, 'YYYY-MM') AS period_label,
            COALESCE(i.store_id, 0) AS store_key,
            COALESCE(SUM(p.amount), 0) AS revenue,
            COUNT(DISTINCT p.payment_id) AS payment_count,
            COUNT(*) AS staging_rows
-    FROM public.stg_payment p
+    FROM " . $paymentSourceSql . " p
     LEFT JOIN public.stg_rental r ON r.rental_id = p.rental_id
     LEFT JOIN public.stg_inventory i ON i.inventory_id = r.inventory_id
     GROUP BY period_label, i.store_id
@@ -1170,7 +1190,7 @@ $pageTitles = [
             </section>
 
             <div class="row g-3 mb-3">
-                <div class="col-xl-3 col-md-6"><div class="metric-card"><div class="label">Rental Sales Value</div><div class="value text-primary"><?= dollar($gmv); ?></div><div class="note">Total nilai dari <code>stg_payment</code>.</div></div></div>
+                <div class="col-xl-3 col-md-6"><div class="metric-card"><div class="label">Rental Sales Value</div><div class="value text-primary"><?= dollar($gmv); ?></div><div class="note">Total nilai dari <code><?= h($paymentSourceLabel); ?></code>.</div></div></div>
                 <div class="col-xl-3 col-md-6"><div class="metric-card"><div class="label">Total Rentals</div><div class="value text-success"><?= number_format($totalOrders); ?></div><div class="note">Jumlah transaksi dari <code>stg_rental</code>.</div></div></div>
                 <div class="col-xl-3 col-md-6"><div class="metric-card"><div class="label">Active Buyers</div><div class="value" style="color:var(--amber);"><?= number_format($activeCustomers); ?></div><div class="note">Customer unik pada filter aktif.</div></div></div>
                 <div class="col-xl-3 col-md-6"><div class="metric-card"><div class="label">Avg Rental Value</div><div class="value" style="color:var(--red);"><?= dollar($avgOrder); ?></div><div class="note">Overdue rate <?= percent($cancelRate); ?>.</div></div></div>
@@ -1488,7 +1508,7 @@ $pageTitles = [
             </div>
         <?php elseif ($page === 'orders'): ?>
             <div class="row g-3 mb-3">
-                <div class="col-md-3"><div class="metric-card"><div class="label">Staging payments</div><div class="value text-primary"><?= dollar($gmv); ?></div><div class="note">Nilai dari <code>stg_payment</code>.</div></div></div>
+                <div class="col-md-3"><div class="metric-card"><div class="label">Staging payments</div><div class="value text-primary"><?= dollar($gmv); ?></div><div class="note">Nilai dari <code><?= h($paymentSourceLabel); ?></code>.</div></div></div>
                 <div class="col-md-3"><div class="metric-card"><div class="label">Rental revenue</div><div class="value text-success"><?= dollar($paidRevenue); ?></div><div class="note">Revenue rental tercatat.</div></div></div>
                 <div class="col-md-3"><div class="metric-card"><div class="label">Avg rental value</div><div class="value" style="color:var(--amber);"><?= dollar($avgOrder); ?></div><div class="note">Rata-rata nilai per rental.</div></div></div>
                 <div class="col-md-3"><div class="metric-card"><div class="label">Overdue rate</div><div class="value" style="color:var(--red);"><?= percent($cancelRate); ?></div><div class="note"><?= number_format($cancelledOrders); ?> rental overdue.</div></div></div>
@@ -1558,7 +1578,7 @@ $pageTitles = [
         <?php elseif ($page === 'films'): ?>
             <div class="row g-3 mb-3">
                 <div class="col-md-3"><div class="metric-card"><div class="label">Film master</div><div class="value text-primary"><?= number_format($pagilaFilmCount); ?></div><div class="note">Jumlah film di <code>staging_film</code>.</div></div></div>
-                <div class="col-md-3"><div class="metric-card"><div class="label">Rental revenue</div><div class="value text-success"><?= dollar($pagilaRevenue); ?></div><div class="note">Total revenue dari <code>stg_payment</code>.</div></div></div>
+                <div class="col-md-3"><div class="metric-card"><div class="label">Rental revenue</div><div class="value text-success"><?= dollar($pagilaRevenue); ?></div><div class="note">Total revenue dari <code><?= h($paymentSourceLabel); ?></code>.</div></div></div>
                 <div class="col-md-3"><div class="metric-card"><div class="label">Rental volume</div><div class="value" style="color:var(--amber);"><?= number_format($pagilaRentals); ?></div><div class="note">Total transaksi rental historis.</div></div></div>
                 <div class="col-md-3"><div class="metric-card"><div class="label">Top film</div><div class="value text-success" style="font-size:1rem;"><?= h($filmBiRows[0]['title'] ?? '-'); ?></div><div class="note"><?= isset($filmBiRows[0]) ? dollar($filmBiRows[0]['rental_revenue']) : 'Belum ada data'; ?></div></div></div>
             </div>
@@ -1591,7 +1611,7 @@ $pageTitles = [
                 <div class="col-md-3"><div class="metric-card"><div class="label">Avg margin</div><div class="value" style="color:var(--red);"><?= percent($storeAvgMargin); ?></div><div class="note">Rata-rata margin cabang.</div></div></div>
             </div>
             <div class="panel">
-                <div class="panel-title"><h2><i class="fa-solid fa-store me-1"></i> Store Operations Scorecard</h2><span class="badge text-bg-light border">staging_store + stg_payment</span></div>
+                <div class="panel-title"><h2><i class="fa-solid fa-store me-1"></i> Store Operations Scorecard</h2><span class="badge text-bg-light border">staging_store + <?= h($paymentSourceLabel); ?></span></div>
                 <div class="chart-box-sm mb-3"><canvas id="storeBiChart"></canvas></div>
                 <div class="table-responsive">
                     <table class="table commerce-table table-hover">
@@ -1616,9 +1636,9 @@ $pageTitles = [
             </div>
         <?php elseif ($page === 'rental'): ?>
             <div class="row g-3 mb-3">
-                <div class="col-md-4"><div class="metric-card"><div class="label">Pagila rental revenue</div><div class="value text-primary"><?= dollar($pagilaRevenue); ?></div><div class="note">Dari <code>stg_payment</code> database rental film.</div></div></div>
+                <div class="col-md-4"><div class="metric-card"><div class="label">Pagila rental revenue</div><div class="value text-primary"><?= dollar($pagilaRevenue); ?></div><div class="note">Dari <code><?= h($paymentSourceLabel); ?></code> database rental film.</div></div></div>
                 <div class="col-md-4"><div class="metric-card"><div class="label">Pagila rental transactions</div><div class="value text-success"><?= number_format($pagilaRentals); ?></div><div class="note">Volume transaksi rental historis.</div></div></div>
-                <div class="col-md-4"><div class="metric-card"><div class="label">Staging payment revenue</div><div class="value" style="color:var(--amber);"><?= dollar($gmv); ?></div><div class="note">Akumulasi dari <code>stg_payment</code>.</div></div></div>
+                <div class="col-md-4"><div class="metric-card"><div class="label">Staging payment revenue</div><div class="value" style="color:var(--amber);"><?= dollar($gmv); ?></div><div class="note">Akumulasi dari <code><?= h($paymentSourceLabel); ?></code>.</div></div></div>
             </div>
             <div class="panel">
                 <div class="panel-title"><h2><i class="fa-solid fa-database me-1"></i> Integrasi Pagila</h2><span class="badge text-bg-light border">Tetap rental film</span></div>
