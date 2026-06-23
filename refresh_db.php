@@ -1,5 +1,42 @@
-<?php
-require_once(__DIR__ . "/config/db.php");
+// Helper function to get row count and sum/max
+function getTableStats($conn, $tableName, $amountCol = null) {
+    if (!tableExists($conn, $tableName)) {
+        return ['exists' => false, 'rows' => 0, 'sum' => 0, 'max' => 0];
+    }
+    try {
+        $rowQuery = "SELECT COUNT(*) FROM public.$tableName";
+        $rows = (int) $conn->query($rowQuery)->fetchColumn();
+        
+        $sum = 0;
+        $max = 0;
+        if ($amountCol) {
+            $sumQuery = "SELECT COALESCE(SUM($amountCol), 0) FROM public.$tableName";
+            $sum = (float) $conn->query($sumQuery)->fetchColumn();
+            
+            $maxQuery = "SELECT COALESCE(MAX($amountCol), 0) FROM public.$tableName";
+            $max = (float) $conn->query($maxQuery)->fetchColumn();
+        }
+        return ['exists' => true, 'rows' => $rows, 'sum' => $sum, 'max' => $max];
+    } catch (Exception $e) {
+        return ['exists' => true, 'error' => $e->getMessage(), 'rows' => 0, 'sum' => 0, 'max' => 0];
+    }
+}
+
+function tableExists(PDO $conn, $table) {
+    try {
+        $stmt = $conn->prepare("
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = :table
+            )
+        ");
+        $stmt->execute([':table' => $table]);
+        $exists = $stmt->fetchColumn();
+        return $exists === true || $exists === 1 || $exists === '1' || $exists === 't';
+    } catch (PDOException $e) {
+        return false;
+    }
+}
 
 $conn = koneksiDB();
 $message = '';
@@ -54,6 +91,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
     }
 }
+
+// Fetch stats for all key tables
+$stats = [
+    'stg_payment' => getTableStats($conn, 'stg_payment', 'amount'),
+    'stg_rental' => getTableStats($conn, 'stg_rental'),
+    'stg_customer' => getTableStats($conn, 'stg_customer'),
+    'staging_payment' => getTableStats($conn, 'staging_payment', 'amount'),
+    'staging_customer' => getTableStats($conn, 'staging_customer'),
+    'staging_film' => getTableStats($conn, 'staging_film'),
+    'staging_store' => getTableStats($conn, 'staging_store'),
+    'commerce_orders' => getTableStats($conn, 'commerce_orders', 'total_amount'),
+    'commerce_customers' => getTableStats($conn, 'commerce_customers')
+];
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -259,6 +309,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 </span>
             </div>
         </form>
+    </div>
+
+    <div class="card-refresh">
+        <h5 class="fw-bold mb-3"><i class="fa-solid fa-magnifying-glass-chart me-2"></i>Status Tabel Database (Aktif):</h5>
+        <div class="table-responsive">
+            <table class="table table-hover table-bordered mb-0" style="font-size: 0.88rem; vertical-align: middle;">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Nama Tabel</th>
+                        <th>Status</th>
+                        <th class="text-end">Jumlah Baris</th>
+                        <th class="text-end">Total Amount</th>
+                        <th class="text-end">Max Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($stats as $tableName => $stat): ?>
+                        <tr>
+                            <td><code class="text-dark fw-bold"><?= htmlspecialchars($tableName) ?></code></td>
+                            <td>
+                                <?php if ($stat['exists']): ?>
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle">Aktif</span>
+                                <?php else: ?>
+                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle font-monospace">Tidak Ditemukan</span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="text-end font-monospace"><?= number_format($stat['rows']) ?></td>
+                            <td class="text-end font-monospace"><?= $stat['sum'] > 0 ? '$' . number_format($stat['sum'], 2) : '-' ?></td>
+                            <td class="text-end font-monospace"><?= $stat['max'] > 0 ? '$' . number_format($stat['max'], 2) : '-' ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <?php if (!empty($logs)): ?>
