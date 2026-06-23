@@ -4,10 +4,10 @@ BEGIN;
 -- that already exist in PgAdmin. Keep stg_payment, stg_rental, and
 -- stg_inventory intact so rental revenue stays aligned with Pagila amounts.
 
-DROP TABLE IF EXISTS public.staging_payment;
-DROP TABLE IF EXISTS public.staging_store;
-DROP TABLE IF EXISTS public.staging_film;
-DROP TABLE IF EXISTS public.staging_customer;
+DROP TABLE IF EXISTS public.staging_payment CASCADE;
+DROP TABLE IF EXISTS public.staging_store CASCADE;
+DROP TABLE IF EXISTS public.staging_film CASCADE;
+DROP TABLE IF EXISTS public.staging_customer CASCADE;
 
 CREATE TABLE public.staging_customer (
     customer_id INTEGER PRIMARY KEY,

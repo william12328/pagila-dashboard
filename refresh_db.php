@@ -107,6 +107,20 @@ $stats = [
     'commerce_orders' => getTableStats($conn, 'commerce_orders', 'total_amount'),
     'commerce_customers' => getTableStats($conn, 'commerce_customers')
 ];
+
+// Fetch sample rows for stg_payment and stg_rental
+$samplePayment = [];
+if (tableExists($conn, 'stg_payment')) {
+    try {
+        $samplePayment = $conn->query("SELECT * FROM public.stg_payment LIMIT 5")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {}
+}
+$sampleRental = [];
+if (tableExists($conn, 'stg_rental')) {
+    try {
+        $sampleRental = $conn->query("SELECT * FROM public.stg_rental LIMIT 5")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {}
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -363,6 +377,56 @@ $stats = [
                     ?>
                     <div class="console-line <?= $class ?>"><?= htmlspecialchars($line) ?></div>
                 <?php endforeach; ?>
+            </div>
+        </div>
+    <?php if (!empty($samplePayment)): ?>
+        <div class="card-refresh">
+            <h5 class="fw-bold mb-3"><i class="fa-solid fa-receipt me-2"></i>Sampel Data stg_payment (5 Baris Teratas):</h5>
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm font-monospace" style="font-size: 0.8rem;">
+                    <thead class="table-dark">
+                        <tr>
+                            <?php foreach (array_keys($samplePayment[0]) as $col): ?>
+                                <th><?= htmlspecialchars($col) ?></th>
+                            <?php endforeach; ?>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($samplePayment as $row): ?>
+                            <tr>
+                                <?php foreach ($row as $val): ?>
+                                    <td><?= htmlspecialchars($val ?? 'NULL') ?></td>
+                                <?php endforeach; ?>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    <?php endif; ?>
+
+    <?php if (!empty($sampleRental)): ?>
+        <div class="card-refresh">
+            <h5 class="fw-bold mb-3"><i class="fa-solid fa-ticket me-2"></i>Sampel Data stg_rental (5 Baris Teratas):</h5>
+            <div class="table-responsive">
+                <table class="table table-bordered table-sm font-monospace" style="font-size: 0.8rem;">
+                    <thead class="table-dark">
+                        <tr>
+                            <?php foreach (array_keys($sampleRental[0]) as $col): ?>
+                                <th><?= htmlspecialchars($col) ?></th>
+                            <?php endforeach; ?>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($sampleRental as $row): ?>
+                            <tr>
+                                <?php foreach ($row as $val): ?>
+                                    <td><?= htmlspecialchars($val ?? 'NULL') ?></td>
+                                <?php endforeach; ?>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
             </div>
         </div>
     <?php endif; ?>
