@@ -1,3 +1,6 @@
+<?php
+require_once(__DIR__ . "/config/db.php");
+
 // Helper function to get row count and sum/max
 function getTableStats($conn, $tableName, $amountCol = null) {
     if (!tableExists($conn, $tableName)) {
